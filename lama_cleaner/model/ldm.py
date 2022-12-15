@@ -220,8 +220,7 @@ class LatentDiffusion(DDPM):
     def apply_model(self, x_noisy, t, cond):
         # x_recon = self.model(x_noisy, t, cond['c_concat'][0])  # cond['c_concat'][0].shape 1,4,128,128
         t_emb = timestep_embedding(x_noisy.device, t, 256, repeat_only=False)
-        x_recon = self.diffusion_model(x_noisy, t_emb, cond)
-        return x_recon
+        return self.diffusion_model(x_noisy, t_emb, cond)
 
 
 class LDM(InpaintModel):
@@ -250,7 +249,7 @@ class LDM(InpaintModel):
             get_cache_path_by_url(LDM_DECODE_MODEL_URL),
             get_cache_path_by_url(LDM_ENCODE_MODEL_URL),
         ]
-        return all([os.path.exists(it) for it in model_paths])
+        return all(os.path.exists(it) for it in model_paths)
 
     @torch.cuda.amp.autocast()
     def forward(self, image, mask, config: Config):

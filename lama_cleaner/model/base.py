@@ -76,7 +76,7 @@ class InpaintModel:
         logger.info(f"hd_strategy: {config.hd_strategy}")
         if config.hd_strategy == HDStrategy.CROP:
             if max(image.shape) > config.hd_strategy_crop_trigger_size:
-                logger.info(f"Run crop strategy")
+                logger.info("Run crop strategy")
                 boxes = boxes_from_mask(mask)
                 crop_result = []
                 for box in boxes:
@@ -175,8 +175,7 @@ class InpaintModel:
 
     def _calculate_cdf(self, histogram):
         cdf = histogram.cumsum()
-        normalized_cdf = cdf / float(cdf.max())
-        return normalized_cdf
+        return cdf / float(cdf.max())
 
     def _calculate_lookup(self, source_cdf, reference_cdf):
         lookup_table = np.zeros(256)

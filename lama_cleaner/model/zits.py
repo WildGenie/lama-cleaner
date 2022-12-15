@@ -35,7 +35,7 @@ ZITS_WIRE_FRAME_MODEL_URL = os.environ.get(
 
 
 def resize(img, height, width, center_crop=False):
-    imgh, imgw = img.shape[0:2]
+    imgh, imgw = img.shape[:2]
 
     if center_crop and imgh != imgw:
         # center crop
@@ -44,10 +44,7 @@ def resize(img, height, width, center_crop=False):
         i = (imgw - side) // 2
         img = img[j : j + side, i : i + side, ...]
 
-    if imgh > height and imgw > width:
-        inter = cv2.INTER_AREA
-    else:
-        inter = cv2.INTER_LINEAR
+    inter = cv2.INTER_AREA if imgh > height and imgw > width else cv2.INTER_LINEAR
     img = cv2.resize(img, (height, width), interpolation=inter)
 
     return img
@@ -80,11 +77,11 @@ def load_masked_position_encoding(mask):
     pos_num = 128
 
     ori_mask = mask.copy()
-    ori_h, ori_w = ori_mask.shape[0:2]
+    ori_h, ori_w = ori_mask.shape[:2]
     ori_mask = ori_mask / 255
     mask = cv2.resize(mask, (str_size, str_size), interpolation=cv2.INTER_AREA)
     mask[mask > 0] = 255
-    h, w = mask.shape[0:2]
+    h, w = mask.shape[:2]
     mask3 = mask.copy()
     mask3 = 1.0 - (mask3 / 255.0)
     pos = np.zeros((h, w), dtype=np.int32)
@@ -144,7 +141,7 @@ def load_image(img, mask, device, sigma256=3.0):
 
     """
     h, w, _ = img.shape
-    imgh, imgw = img.shape[0:2]
+    imgh, imgw = img.shape[:2]
     img_256 = resize(img, 256, 256)
 
     mask = (mask > 127).astype(np.uint8) * 255
@@ -173,8 +170,7 @@ def load_image(img, mask, device, sigma256=3.0):
 
     rel_pos, abs_pos, direct = load_masked_position_encoding(mask)
 
-    batch = dict()
-    batch["images"] = to_tensor(img.copy()).unsqueeze(0).to(device)
+    batch = {"images": to_tensor(img.copy()).unsqueeze(0).to(device)}
     batch["img_256"] = to_tensor(img_256, norm=True).unsqueeze(0).to(device)
     batch["masks"] = to_tensor(mask).unsqueeze(0).to(device)
     batch["mask_256"] = to_tensor(mask_256).unsqueeze(0).to(device)
@@ -233,7 +229,7 @@ class ZITS(InpaintModel):
             get_cache_path_by_url(ZITS_STRUCTURE_UPSAMPLE_MODEL_URL),
             get_cache_path_by_url(ZITS_INPAINT_MODEL_URL),
         ]
-        return all([os.path.exists(it) for it in model_paths])
+        return all(os.path.exists(it) for it in model_paths)
 
     def wireframe_edge_and_line(self, items, enable: bool):
         # 最终向 items 中添加 edge 和 line key
@@ -368,9 +364,7 @@ class ZITS(InpaintModel):
 
         for line, score in zip(lines_masked, scores_masked):
             if score > mask_th:
-                rr, cc, value = skimage.draw.line_aa(
-                    *to_int(line[0:2]), *to_int(line[2:4])
-                )
+                rr, cc, value = skimage.draw.line_aa(*to_int(line[:2]), *to_int(line[2:4]))
                 lmap[rr, cc] = np.maximum(lmap[rr, cc], value)
 
         lmap = np.clip(lmap * 255, 0, 255).astype(np.uint8)

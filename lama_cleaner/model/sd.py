@@ -34,9 +34,9 @@ class SD(InpaintModel):
         model_kwargs = {"local_files_only": kwargs['sd_run_local']}
         if kwargs['sd_disable_nsfw']:
             logger.info("Disable Stable Diffusion Model NSFW checker")
-            model_kwargs.update(dict(
+            model_kwargs |= dict(
                 safety_checker=None,
-            ))
+            )
 
         use_gpu = device == torch.device('cuda') and torch.cuda.is_available()
         torch_dtype = torch.float16 if use_gpu else torch.float32

@@ -263,9 +263,7 @@ class EncoderNetwork(torch.nn.Module):
             x, img, feat = block(x, img, **block_kwargs)
             feats[res] = feat
 
-        cmap = None
-        if self.c_dim > 0:
-            cmap = self.mapping(None, c)
+        cmap = self.mapping(None, c) if self.c_dim > 0 else None
         x, const_e = self.b4(x, cmap)
         feats[4] = const_e
 
@@ -291,19 +289,9 @@ class _FusedMultiplyAdd(torch.autograd.Function):  # a * b + c
     def backward(ctx, dout):  # pylint: disable=arguments-differ
         a, b = ctx.saved_tensors
         c_shape = ctx.c_shape
-        da = None
-        db = None
-        dc = None
-
-        if ctx.needs_input_grad[0]:
-            da = _unbroadcast(dout * b, a.shape)
-
-        if ctx.needs_input_grad[1]:
-            db = _unbroadcast(dout * a, b.shape)
-
-        if ctx.needs_input_grad[2]:
-            dc = _unbroadcast(dout, c_shape)
-
+        da = _unbroadcast(dout * b, a.shape) if ctx.needs_input_grad[0] else None
+        db = _unbroadcast(dout * a, b.shape) if ctx.needs_input_grad[1] else None
+        dc = _unbroadcast(dout, c_shape) if ctx.needs_input_grad[2] else None
         return da, db, dc
 
 
@@ -493,16 +481,13 @@ class SynthesisForeword(torch.nn.Module):
         x_skip = feats[4].clone()
         x = x + x_skip
 
-        mod_vector = []
-        mod_vector.append(ws[:, 0])
-        mod_vector.append(x_global.clone())
+        mod_vector = [ws[:, 0], x_global.clone()]
         mod_vector = torch.cat(mod_vector, dim=1)
 
         x = self.conv(x, mod_vector)
 
         mod_vector = []
-        mod_vector.append(ws[:, 2 * 2 - 3])
-        mod_vector.append(x_global.clone())
+        mod_vector.extend((ws[:, 2 * 2 - 3], x_global.clone()))
         mod_vector = torch.cat(mod_vector, dim=1)
 
         if self.architecture == 'skip':
@@ -528,8 +513,7 @@ class SELayer(nn.Module):
         b, c, _, _ = x.size()
         y = self.avg_pool(x).view(b, c)
         y = self.fc(y).view(b, c, 1, 1)
-        res = x * y.expand_as(x)
-        return res
+        return x * y.expand_as(x)
 
 
 class FourierUnit(nn.Module):
@@ -657,7 +641,7 @@ class FFC(nn.Module):
                  padding_type='reflect', gated=False, **spectral_kwargs):
         super(FFC, self).__init__()
 
-        assert stride == 1 or stride == 2, "Stride should be 1 or 2."
+        assert stride in [1, 2], "Stride should be 1 or 2."
         self.stride = stride
 
         in_cg = int(in_channels * ratio_gin)
@@ -782,9 +766,7 @@ class ConcatTupleLayer(nn.Module):
         assert isinstance(x, tuple)
         x_l, x_g = x
         assert torch.is_tensor(x_l) or torch.is_tensor(x_g)
-        if not torch.is_tensor(x_g):
-            return x_l
-        return torch.cat(x, dim=1)
+        return torch.cat(x, dim=1) if torch.is_tensor(x_g) else x_l
 
 
 class FFCBlock(torch.nn.Module):
@@ -797,10 +779,7 @@ class FFCBlock(torch.nn.Module):
                  activation='linear',  # Activation function: 'relu', 'lrelu', etc.
                  ):
         super().__init__()
-        if activation == 'linear':
-            self.activation = nn.Identity
-        else:
-            self.activation = nn.ReLU
+        self.activation = nn.Identity if activation == 'linear' else nn.ReLU
         self.padding = padding
         self.kernel_size = kernel_size
         self.ffc_block = FFCResnetBlock(dim=dim,
@@ -840,8 +819,7 @@ class FFCSkipLayer(torch.nn.Module):
                                 padding=self.padding, ratio_gin=ratio_gin, ratio_gout=ratio_gout)
 
     def forward(self, gen_ft, mask, fname=None):
-        x = self.ffc_act(gen_ft, mask, fname=fname)
-        return x
+        return self.ffc_act(gen_ft, mask, fname=fname)
 
 
 class SynthesisBlock(torch.nn.Module):
@@ -978,7 +956,7 @@ class SynthesisNetwork(torch.nn.Module):
 
         self.num_ws = self.img_resolution_log2 * 2 - 2
         for res in self.block_resolutions:
-            if res // 2 in channels_dict.keys():
+            if res // 2 in channels_dict:
                 in_channels = channels_dict[res // 2] if res > 4 else 0
             else:
                 in_channels = min(channel_base // (res // 2), channel_max)
@@ -998,18 +976,15 @@ class SynthesisNetwork(torch.nn.Module):
 
         for res in self.block_resolutions:
             block = getattr(self, f'b{res}')
-            mod_vector0 = []
-            mod_vector0.append(ws[:, int(np.log2(res)) * 2 - 5])
+            mod_vector0 = [ws[:, int(np.log2(res)) * 2 - 5]]
             mod_vector0.append(x_global.clone())
             mod_vector0 = torch.cat(mod_vector0, dim=1)
 
-            mod_vector1 = []
-            mod_vector1.append(ws[:, int(np.log2(res)) * 2 - 4])
+            mod_vector1 = [ws[:, int(np.log2(res)) * 2 - 4]]
             mod_vector1.append(x_global.clone())
             mod_vector1 = torch.cat(mod_vector1, dim=1)
 
-            mod_vector_rgb = []
-            mod_vector_rgb.append(ws[:, int(np.log2(res)) * 2 - 3])
+            mod_vector_rgb = [ws[:, int(np.log2(res)) * 2 - 3]]
             mod_vector_rgb.append(x_global.clone())
             mod_vector_rgb = torch.cat(mod_vector_rgb, dim=1)
             x, img = block(x, mask, feats, img, (mod_vector0, mod_vector1, mod_vector_rgb), fname=fname, **block_kwargs)
@@ -1210,5 +1185,4 @@ class FcF(InpaintModel):
         output = self.model(input_image, self.label, truncation_psi=0.1, noise_mode='none')
         output = (output.permute(0, 2, 3, 1) * 127.5 + 127.5).round().clamp(0, 255).to(torch.uint8)
         output = output[0].cpu().numpy()
-        cur_res = cv2.cvtColor(output, cv2.COLOR_RGB2BGR)
-        return cur_res
+        return cv2.cvtColor(output, cv2.COLOR_RGB2BGR)

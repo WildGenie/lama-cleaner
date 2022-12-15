@@ -59,10 +59,13 @@ def parse_args():
         if imghdr.what(args.input) is None:
             parser.error(f"invalid --input: {args.input} is not a valid image file")
 
-    if args.model == 'sd1.5' and not args.sd_run_local:
-        if not args.hf_access_token.startswith("hf_"):
-            parser.error(
-                f"sd(stable-diffusion) model requires huggingface access token. Check how to get token from: https://huggingface.co/docs/hub/security-tokens"
-            )
+    if (
+        args.model == 'sd1.5'
+        and not args.sd_run_local
+        and not args.hf_access_token.startswith("hf_")
+    ):
+        parser.error(
+            "sd(stable-diffusion) model requires huggingface access token. Check how to get token from: https://huggingface.co/docs/hub/security-tokens"
+        )
 
     return args

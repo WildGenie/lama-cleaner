@@ -53,10 +53,12 @@ class ResizeTrans:
         return image_nd_r, clicks_lists_resized
 
     def inv_transform(self, prob_map):
-        new_prob_map = F.interpolate(prob_map, (self.image_height, self.image_width), mode='bilinear',
-                                     align_corners=True)
-
-        return new_prob_map
+        return F.interpolate(
+            prob_map,
+            (self.image_height, self.image_width),
+            mode='bilinear',
+            align_corners=True,
+        )
 
 
 class ISPredictor(object):
@@ -143,10 +145,10 @@ class ISPredictor(object):
         for clicks_list in clicks_lists:
             clicks_list = clicks_list[:self.net_clicks_limit]
             pos_clicks = [click.coords_and_indx for click in clicks_list if click.is_positive]
-            pos_clicks = pos_clicks + (num_max_points - len(pos_clicks)) * [(-1, -1, -1)]
+            pos_clicks += (num_max_points - len(pos_clicks)) * [(-1, -1, -1)]
 
             neg_clicks = [click.coords_and_indx for click in clicks_list if not click.is_positive]
-            neg_clicks = neg_clicks + (num_max_points - len(neg_clicks)) * [(-1, -1, -1)]
+            neg_clicks += (num_max_points - len(neg_clicks)) * [(-1, -1, -1)]
             total_clicks.append(pos_clicks + neg_clicks)
 
         return torch.tensor(total_clicks, device=self.device)

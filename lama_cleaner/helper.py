@@ -17,23 +17,20 @@ def get_cache_path_by_url(url):
     if not os.path.isdir(model_dir):
         os.makedirs(os.path.join(model_dir, "hub", "checkpoints"))
     filename = os.path.basename(parts.path)
-    cached_file = os.path.join(model_dir, filename)
-    return cached_file
+    return os.path.join(model_dir, filename)
 
 
 def download_model(url):
     cached_file = get_cache_path_by_url(url)
     if not os.path.exists(cached_file):
-        sys.stderr.write('Downloading: "{}" to {}\n'.format(url, cached_file))
+        sys.stderr.write(f'Downloading: "{url}" to {cached_file}\n')
         hash_prefix = None
         download_url_to_file(url, cached_file, hash_prefix, progress=True)
     return cached_file
 
 
 def ceil_modulo(x, mod):
-    if x % mod == 0:
-        return x
-    return (x // mod + 1) * mod
+    return x if x % mod == 0 else (x // mod + 1) * mod
 
 
 def load_jit_model(url_or_path, device):
@@ -79,8 +76,7 @@ def numpy_to_bytes(image_numpy: np.ndarray, ext: str) -> bytes:
         image_numpy,
         [int(cv2.IMWRITE_JPEG_QUALITY), 100, int(cv2.IMWRITE_PNG_COMPRESSION), 0],
     )[1]
-    image_bytes = data.tobytes()
-    return image_bytes
+    return data.tobytes()
 
 
 def load_img(img_bytes, gray: bool = False):
@@ -201,8 +197,7 @@ def only_keep_largest_contour(mask: np.ndarray) -> List[np.ndarray]:
             max_area = area
             max_index = i
 
-    if max_index != -1:
-        new_mask = np.zeros_like(mask)
-        return cv2.drawContours(new_mask, contours, max_index, 255, -1)
-    else:
+    if max_index == -1:
         return mask
+    new_mask = np.zeros_like(mask)
+    return cv2.drawContours(new_mask, contours, max_index, 255, -1)
