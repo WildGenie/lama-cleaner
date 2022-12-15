@@ -12,9 +12,7 @@ def load_requirements():
     requirements_file_name = "requirements.txt"
     requires = []
     with open(requirements_file_name) as f:
-        for line in f:
-            if line:
-                requires.append(line.strip())
+        requires.extend(line.strip() for line in f if line)
     return requires
 
 

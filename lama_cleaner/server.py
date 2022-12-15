@@ -111,11 +111,7 @@ def process():
 
     form = request.form
     size_limit: Union[int, str] = form.get("sizeLimit", "1080")
-    if size_limit == "Original":
-        size_limit = max(image.shape)
-    else:
-        size_limit = int(size_limit)
-
+    size_limit = max(image.shape) if size_limit == "Original" else int(size_limit)
     if "paintByExampleImage" in input:
         paint_by_example_example_image, _ = load_img(input["paintByExampleImage"].read())
         paint_by_example_example_image = Image.fromarray(paint_by_example_example_image)
@@ -173,9 +169,8 @@ def process():
         if "CUDA out of memory. " in str(e):
             # NOTE: the string may change?
             return "CUDA out of memory", 500
-        else:
-            logger.exception(e)
-            return "Internal Server Error", 500
+        logger.exception(e)
+        return "Internal Server Error", 500
     finally:
         logger.info(f"process time: {(time.time() - start) * 1000}ms")
         torch.cuda.empty_cache()
@@ -212,20 +207,18 @@ def interactive_seg():
         mask = None
 
     _clicks = json.loads(request.form["clicks"])
-    clicks = []
-    for i, click in enumerate(_clicks):
-        clicks.append(Click(coords=(click[1], click[0]), indx=i, is_positive=click[2] == 1))
-
+    clicks = [
+        Click(coords=(click[1], click[0]), indx=i, is_positive=click[2] == 1)
+        for i, click in enumerate(_clicks)
+    ]
     start = time.time()
     new_mask = interactive_seg_model(image, clicks=clicks, prev_mask=mask)
     logger.info(f"interactive seg process time: {(time.time() - start) * 1000}ms")
-    response = make_response(
+    return make_response(
         send_file(
-            io.BytesIO(numpy_to_bytes(new_mask, 'png')),
-            mimetype=f"image/png",
+            io.BytesIO(numpy_to_bytes(new_mask, 'png')), mimetype="image/png"
         )
     )
-    return response
 
 
 @app.route("/model")
@@ -272,17 +265,16 @@ def index():
 
 @app.route("/inputimage")
 def set_input_photo():
-    if input_image_path:
-        with open(input_image_path, "rb") as f:
-            image_in_bytes = f.read()
-        return send_file(
-            input_image_path,
-            as_attachment=True,
-            attachment_filename=Path(input_image_path).name,
-            mimetype=f"image/{get_image_ext(image_in_bytes)}",
-        )
-    else:
+    if not input_image_path:
         return "No Input Image"
+    with open(input_image_path, "rb") as f:
+        image_in_bytes = f.read()
+    return send_file(
+        input_image_path,
+        as_attachment=True,
+        attachment_filename=Path(input_image_path).name,
+        mimetype=f"image/{get_image_ext(image_in_bytes)}",
+    )
 
 
 def main(args):
@@ -298,7 +290,9 @@ def main(args):
     is_disable_model_switch = args.disable_model_switch
     is_desktop = args.gui
     if is_disable_model_switch:
-        logger.info(f"Start with --disable-model-switch, model switch on frontend is disable")
+        logger.info(
+            "Start with --disable-model-switch, model switch on frontend is disable"
+        )
 
     model = ModelManager(
         name=args.model,

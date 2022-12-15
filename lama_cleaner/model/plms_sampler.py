@@ -78,9 +78,8 @@ class PLMSSampler(object):
                 cbs = conditioning[list(conditioning.keys())[0]].shape[0]
                 if cbs != batch_size:
                     print(f"Warning: Got {cbs} conditionings but batch-size is {batch_size}")
-            else:
-                if conditioning.shape[0] != batch_size:
-                    print(f"Warning: Got {conditioning.shape[0]} conditionings but batch-size is {batch_size}")
+            elif conditioning.shape[0] != batch_size:
+                print(f"Warning: Got {conditioning.shape[0]} conditionings but batch-size is {batch_size}")
 
         self.make_schedule(ddim_num_steps=steps, ddim_eta=eta, verbose=verbose)
         # sampling
@@ -88,22 +87,24 @@ class PLMSSampler(object):
         size = (batch_size, C, H, W)
         print(f'Data shape for PLMS sampling is {size}')
 
-        samples = self.plms_sampling(conditioning, size,
-                                     callback=callback,
-                                     img_callback=img_callback,
-                                     quantize_denoised=quantize_x0,
-                                     mask=mask, x0=x0,
-                                     ddim_use_original_steps=False,
-                                     noise_dropout=noise_dropout,
-                                     temperature=temperature,
-                                     score_corrector=score_corrector,
-                                     corrector_kwargs=corrector_kwargs,
-                                     x_T=x_T,
-                                     log_every_t=log_every_t,
-                                     unconditional_guidance_scale=unconditional_guidance_scale,
-                                     unconditional_conditioning=unconditional_conditioning,
-                                     )
-        return samples
+        return self.plms_sampling(
+            conditioning,
+            size,
+            callback=callback,
+            img_callback=img_callback,
+            quantize_denoised=quantize_x0,
+            mask=mask,
+            x0=x0,
+            ddim_use_original_steps=False,
+            noise_dropout=noise_dropout,
+            temperature=temperature,
+            score_corrector=score_corrector,
+            corrector_kwargs=corrector_kwargs,
+            x_T=x_T,
+            log_every_t=log_every_t,
+            unconditional_guidance_scale=unconditional_guidance_scale,
+            unconditional_conditioning=unconditional_conditioning,
+        )
 
     @torch.no_grad()
     def plms_sampling(self, cond, shape,
@@ -114,18 +115,18 @@ class PLMSSampler(object):
                       unconditional_guidance_scale=1., unconditional_conditioning=None, ):
         device = self.model.betas.device
         b = shape[0]
-        if x_T is None:
-            img = torch.randn(shape, device=device)
-        else:
-            img = x_T
-
+        img = torch.randn(shape, device=device) if x_T is None else x_T
         if timesteps is None:
             timesteps = self.ddpm_num_timesteps if ddim_use_original_steps else self.ddim_timesteps
-        elif timesteps is not None and not ddim_use_original_steps:
+        elif not ddim_use_original_steps:
             subset_end = int(min(timesteps / self.ddim_timesteps.shape[0], 1) * self.ddim_timesteps.shape[0]) - 1
             timesteps = self.ddim_timesteps[:subset_end]
 
-        time_range = list(reversed(range(0, timesteps))) if ddim_use_original_steps else np.flip(timesteps)
+        time_range = (
+            list(reversed(range(timesteps)))
+            if ddim_use_original_steps
+            else np.flip(timesteps)
+        )
         total_steps = timesteps if ddim_use_original_steps else timesteps.shape[0]
         print(f"Running PLMS Sampling with {total_steps} timesteps")
 

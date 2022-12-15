@@ -55,9 +55,7 @@ class ModulatedConv2d(nn.Module):
         x = x.view(1, batch * in_channels, height, width)
         x = conv2d_resample(x=x, w=weight, f=self.resample_filter, up=self.up, down=self.down,
                             padding=self.padding, groups=batch)
-        out = x.view(batch, self.out_channels, *x.shape[2:])
-
-        return out
+        return x.view(batch, self.out_channels, *x.shape[2:])
 
 
 class StyleConv(torch.nn.Module):
@@ -105,16 +103,16 @@ class StyleConv(torch.nn.Module):
             if noise_mode == 'random':
                 xh, xw = x.size()[-2:]
                 noise = torch.randn([x.shape[0], 1, xh, xw], device=x.device) \
-                        * self.noise_strength
+                            * self.noise_strength
             if noise_mode == 'const':
                 noise = self.noise_const * self.noise_strength
             x = x + noise
 
         act_gain = self.act_gain * gain
         act_clamp = self.conv_clamp * gain if self.conv_clamp is not None else None
-        out = bias_act(x, self.bias, act=self.activation, gain=act_gain, clamp=act_clamp)
-
-        return out
+        return bias_act(
+            x, self.bias, act=self.activation, gain=act_gain, clamp=act_clamp
+        )
 
 
 class ToRGB(torch.nn.Module):
@@ -383,9 +381,7 @@ class DisBlock(nn.Module):
         skip = self.skip(x, gain=np.sqrt(0.5))
         x = self.conv0(x)
         x = self.conv1(x, gain=np.sqrt(0.5))
-        out = skip + x
-
-        return out
+        return skip + x
 
 
 class Discriminator(torch.nn.Module):
@@ -413,7 +409,7 @@ class Discriminator(torch.nn.Module):
         def nf(stage):
             return np.clip(int(channel_base / 2 ** (stage * channel_decay)), 1, channel_max)
 
-        if cmap_dim == None:
+        if cmap_dim is None:
             cmap_dim = nf(2)
         if c_dim == 0:
             cmap_dim = 0
@@ -477,8 +473,11 @@ def window_partition(x, window_size):
     """
     B, H, W, C = x.shape
     x = x.view(B, H // window_size, window_size, W // window_size, window_size, C)
-    windows = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(-1, window_size, window_size, C)
-    return windows
+    return (
+        x.permute(0, 1, 3, 2, 4, 5)
+        .contiguous()
+        .view(-1, window_size, window_size, C)
+    )
 
 
 def window_reverse(windows, window_size: int, H: int, W: int):
@@ -589,8 +588,9 @@ class WindowAttention(nn.Module):
 
         if mask_windows is not None:
             attn_mask_windows = mask_windows.squeeze(-1).unsqueeze(1).unsqueeze(1)
-            attn = attn + attn_mask_windows.masked_fill(attn_mask_windows == 0, float(-100.0)).masked_fill(
-                attn_mask_windows == 1, float(0.0))
+            attn = attn + attn_mask_windows.masked_fill(
+                attn_mask_windows == 0, -100.0
+            ).masked_fill(attn_mask_windows == 1, 0.0)
             with torch.no_grad():
                 mask_windows = torch.clamp(torch.sum(mask_windows, dim=1, keepdim=True), 0, 1).repeat(1, N, 1)
 
@@ -672,7 +672,9 @@ class SwinTransformerBlock(nn.Module):
         mask_windows = window_partition(img_mask, self.window_size)  # nW, window_size, window_size, 1
         mask_windows = mask_windows.view(-1, self.window_size * self.window_size)
         attn_mask = mask_windows.unsqueeze(1) - mask_windows.unsqueeze(2)
-        attn_mask = attn_mask.masked_fill(attn_mask != 0, float(-100.0)).masked_fill(attn_mask == 0, float(0.0))
+        attn_mask = attn_mask.masked_fill(attn_mask != 0, -100.0).masked_fill(
+            attn_mask == 0, 0.0
+        )
 
         return attn_mask
 
@@ -820,12 +822,7 @@ class BasicLayer(nn.Module):
         self.use_checkpoint = use_checkpoint
 
         # patch merging layer
-        if downsample is not None:
-            # self.downsample = downsample(input_resolution, dim=dim, norm_layer=norm_layer)
-            self.downsample = downsample
-        else:
-            self.downsample = None
-
+        self.downsample = downsample if downsample is not None else None
         # build blocks
         self.blocks = nn.ModuleList([
             SwinTransformerBlock(dim=dim, input_resolution=input_resolution,
@@ -934,13 +931,14 @@ class Encoder(nn.Module):
 
         self.resolution = []
 
-        for idx, i in enumerate(range(res_log2, 3, -1)):  # from input size to 16x16
+        for i in range(res_log2, 3, -1):
             res = 2 ** i
             self.resolution.append(res)
-            if i == res_log2:
-                block = EncFromRGB(img_channels * 2 + 1, nf(i), activation)
-            else:
-                block = ConvBlockDown(nf(i + 1), nf(i), activation)
+            block = (
+                EncFromRGB(img_channels * 2 + 1, nf(i), activation)
+                if i == res_log2
+                else ConvBlockDown(nf(i + 1), nf(i), activation)
+            )
             setattr(self, 'EncConv_Block_%dx%d' % (res, res), block)
 
     def forward(self, x):
@@ -1131,7 +1129,7 @@ class FirstStage(nn.Module):
         self.enc_conv = nn.ModuleList()
         down_time = int(np.log2(img_resolution // res))
         # 根据图片尺寸构建 swim transformer 的层数
-        for i in range(down_time):  # from input size to 64
+        for _ in range(down_time):
             self.enc_conv.append(
                 Conv2dLayerPartial(in_channels=dim, out_channels=dim, kernel_size=3, down=2, activation=activation)
             )
@@ -1160,10 +1158,16 @@ class FirstStage(nn.Module):
             )
 
         # global style
-        down_conv = []
-        for i in range(int(np.log2(16))):
-            down_conv.append(
-                Conv2dLayer(in_channels=dim, out_channels=dim, kernel_size=3, down=2, activation=activation))
+        down_conv = [
+            Conv2dLayer(
+                in_channels=dim,
+                out_channels=dim,
+                kernel_size=3,
+                down=2,
+                activation=activation,
+            )
+            for _ in range(int(np.log2(16)))
+        ]
         down_conv.append(nn.AdaptiveAvgPool2d((1, 1)))
         self.down_conv = nn.Sequential(*down_conv)
         self.to_style = FullyConnectedLayer(in_features=dim, out_features=dim * 2, activation=activation)
@@ -1172,7 +1176,7 @@ class FirstStage(nn.Module):
 
         style_dim = dim * 3
         self.dec_conv = nn.ModuleList()
-        for i in range(down_time):  # from 64 to input size
+        for _ in range(down_time):
             res = res * 2
             self.dec_conv.append(
                 DecStyleBlock(res, dim, dim, activation, style_dim, use_noise, demodulate, img_channels))
@@ -1180,9 +1184,8 @@ class FirstStage(nn.Module):
     def forward(self, images_in, masks_in, ws, noise_mode='random'):
         x = torch.cat([masks_in - 0.5, images_in * masks_in], dim=1)
 
-        skips = []
         x, mask = self.conv_first(x, masks_in)  # input size
-        skips.append(x)
+        skips = [x]
         for i, block in enumerate(self.enc_conv):  # input size to 64
             x, mask = block(x, mask)
             if i != len(self.enc_conv) - 1:
@@ -1280,10 +1283,7 @@ class SynthesisNet(nn.Module):
         # ensemble
         img = img * (1 - masks_in) + images_in * masks_in
 
-        if not return_stg1:
-            return img
-        else:
-            return img, out_stg1
+        return (img, out_stg1) if return_stg1 else img
 
 
 class Generator(nn.Module):
@@ -1317,8 +1317,7 @@ class Generator(nn.Module):
                 noise_mode='none', return_stg1=False):
         ws = self.mapping(z, c, truncation_psi=truncation_psi, truncation_cutoff=truncation_cutoff,
                           skip_w_avg_update=skip_w_avg_update)
-        img = self.synthesis(images_in, masks_in, ws, noise_mode=noise_mode)
-        return img
+        return self.synthesis(images_in, masks_in, ws, noise_mode=noise_mode)
 
 
 class Discriminator(torch.nn.Module):
@@ -1343,7 +1342,7 @@ class Discriminator(torch.nn.Module):
         assert img_resolution == 2 ** resolution_log2 and img_resolution >= 4
         self.resolution_log2 = resolution_log2
 
-        if cmap_dim == None:
+        if cmap_dim is None:
             cmap_dim = nf(2)
         if c_dim == 0:
             cmap_dim = 0
@@ -1353,9 +1352,10 @@ class Discriminator(torch.nn.Module):
             self.mapping = MappingNet(z_dim=0, c_dim=c_dim, w_dim=cmap_dim, num_ws=None, w_avg_beta=None)
 
         Dis = [DisFromRGB(img_channels + 1, nf(resolution_log2), activation)]
-        for res in range(resolution_log2, 2, -1):
-            Dis.append(DisBlock(nf(res), nf(res - 1), activation))
-
+        Dis.extend(
+            DisBlock(nf(res), nf(res - 1), activation)
+            for res in range(resolution_log2, 2, -1)
+        )
         if mbstd_num_channels > 0:
             Dis.append(MinibatchStdLayer(group_size=mbstd_group_size, num_channels=mbstd_num_channels))
         Dis.append(Conv2dLayer(nf(2) + mbstd_num_channels, nf(2), kernel_size=3, activation=activation))
@@ -1366,9 +1366,10 @@ class Discriminator(torch.nn.Module):
 
         # for 64x64
         Dis_stg1 = [DisFromRGB(img_channels + 1, nf(resolution_log2) // 2, activation)]
-        for res in range(resolution_log2, 2, -1):
-            Dis_stg1.append(DisBlock(nf(res) // 2, nf(res - 1) // 2, activation))
-
+        Dis_stg1.extend(
+            DisBlock(nf(res) // 2, nf(res - 1) // 2, activation)
+            for res in range(resolution_log2, 2, -1)
+        )
         if mbstd_num_channels > 0:
             Dis_stg1.append(MinibatchStdLayer(group_size=mbstd_group_size, num_channels=mbstd_num_channels))
         Dis_stg1.append(Conv2dLayer(nf(2) // 2 + mbstd_num_channels, nf(2) // 2, kernel_size=3, activation=activation))
@@ -1440,5 +1441,4 @@ class MAT(InpaintModel):
         output = self.model(image, mask, self.z, self.label, truncation_psi=1, noise_mode='none')
         output = (output.permute(0, 2, 3, 1) * 127.5 + 127.5).round().clamp(0, 255).to(torch.uint8)
         output = output[0].cpu().numpy()
-        cur_res = cv2.cvtColor(output, cv2.COLOR_RGB2BGR)
-        return cur_res
+        return cv2.cvtColor(output, cv2.COLOR_RGB2BGR)

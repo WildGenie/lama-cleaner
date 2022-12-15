@@ -113,7 +113,7 @@ class DDIMSampler(object):
         )
 
         time_range = (
-            reversed(range(0, timesteps))
+            reversed(range(timesteps))
             if ddim_use_original_steps
             else np.flip(timesteps)
         )

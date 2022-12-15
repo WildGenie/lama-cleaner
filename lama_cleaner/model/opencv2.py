@@ -20,5 +20,9 @@ class OpenCV2(InpaintModel):
         mask: [H, W, 1]
         return: BGR IMAGE
         """
-        cur_res = cv2.inpaint(image[:,:,::-1], mask, inpaintRadius=config.cv2_radius, flags=flag_map[config.cv2_flag])
-        return cur_res
+        return cv2.inpaint(
+            image[:, :, ::-1],
+            mask,
+            inpaintRadius=config.cv2_radius,
+            flags=flag_map[config.cv2_flag],
+        )
